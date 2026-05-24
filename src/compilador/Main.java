@@ -19,7 +19,7 @@ public class Main {
             Parser parse = new Parser(lex);
             
             // Chama o símbolo inicial da sua gramática (ex: programa)
-            parse.programa();
+            parse.program();
             
             System.out.println("Análise concluída com sucesso! Código sintaticamente correto.");
             
