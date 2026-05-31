@@ -6,7 +6,7 @@ class MinhaClasse
  read(a);
  write("Digite outro número: ");
  read(b);
- write("Digite mais um número: );
+ write("Digite mais um número: ");
  read(c;
 
  maior := 0;
