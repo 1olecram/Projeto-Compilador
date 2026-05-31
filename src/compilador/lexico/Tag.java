@@ -33,4 +33,7 @@ public class Tag {
     public final static int AND = 277;    // and (ou &&)
     public final static int OR = 278;     // or (ou ||)
     public final static int NOT = 279;    // not
+
+    //Operador de fim de arquivo
+    public final static int EOF  = 65535; //EOF
 }
