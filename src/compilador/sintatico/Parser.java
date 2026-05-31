@@ -102,27 +102,27 @@ public class Parser {
     public void stmt() throws IOException {
         switch (look.tag) {
             case Tag.ID:
-                assign_stmt(); 
+                assign_stmt();
                 break;
 
             case Tag.IF:
-                if_stmt(); 
+                if_stmt();
                 break;
 
             case Tag.DO:
-                do_stmt(); 
+                do_stmt();
                 break;
 
             case Tag.REPEAT:
-                repeat_stmt(); 
+                repeat_stmt();
                 break;
 
             case Tag.READ:
-                read_stmt(); 
+                read_stmt();
                 break;
 
             case Tag.WRITE:
-                write_stmt(); 
+                write_stmt();
                 break;
 
             default:
@@ -152,82 +152,222 @@ public class Parser {
     }
 
     public void if_stmtf() throws IOException {
+        if (look.tag == Tag.ELSE) {
+            match(Tag.ELSE);
+            match('{');
+            stmt_list();
+            match('}');
+        }
         // ::= else “{“ stmt_list “}” | λ
     }
 
     public void do_stmt() throws IOException {
+        match(Tag.DO);
+        match('{');
+        stmt_list();
+        match('}');
+        do_suffix();
         // ::= do “{“ stmt_list “}” do_suffix
     }
 
     public void do_suffix() throws IOException {
+        match(Tag.WHILE);
+        match('(');
+        condition();
+        match(')');
         // ::= while “(“ condition “)”
     }
 
     public void repeat_stmt() throws IOException {
+        match(Tag.REPEAT);
+        match('{');
+        stmt_list();
+        match('}');
+        stmt_suffix();
         // ::= repeat “{“ stmt_list “}” stmt_suffix
     }
 
     public void stmt_suffix() throws IOException {
+        match(Tag.UNTIL);
+        match('(');
+        condition();
+        match(')');
         // ::= until “(“ condition “)”
     }
 
     public void read_stmt() throws IOException {
+        match(Tag.READ);
+        match('(');
+        match(Tag.ID);
+        match(')');
         // ::= read "(" identifier ")"
     }
 
     public void write_stmt() throws IOException {
+        match(Tag.WRITE);
+        match('(');
+        writable();
+        match(')');
         // ::= write "(" writable ")"
     }
 
     public void writable() throws IOException {
+        simple_expr();
         // ::= simple_expr
     }
 
     public void condition() throws IOException {
+        expression();
         // ::= expression
     }
 
     public void expression() throws IOException {
+        simple_expr();
+        expressionf();
         // ::= simple_expr expressionf
     }
 
     public void expressionf() throws IOException {
+        if (look.tag == '>' || look.tag == Tag.GE || look.tag == '<' || 
+            look.tag == Tag.LE || look.tag == Tag.NE || look.tag == Tag.EQ) {
+            relop();
+            simple_expr();
+        }
         // ::= relop simple_expr | λ
     }
 
     public void simple_expr() throws IOException {
+        term();
+        simple_exprf();
         // ::= term simple_exprf
     }
 
     public void simple_exprf() throws IOException {
+        if(look.tag == '+' || look.tag == '-' || look.tag == Tag.OR){
+            addop();
+            term();
+            simple_exprf();
+        }
         // ::= addop term simple_exprf | λ
     }
 
     public void term() throws IOException {
+        factor_a();
+        termf();
         // ::= factor_a termf
     }
 
     public void termf() throws IOException {
+        if(look.tag == '*' || look.tag == '/' || look.tag == '%' || look.tag == Tag.AND){
+            mulop();
+            factor();
+            termf();
+        }
         // ::= mulop factor_a termf | λ
     }
 
     public void factor_a() throws IOException {
+        if (look.tag == Tag.NOT) {
+            match(Tag.NOT);
+            factor();
+        } else if (look.tag == '_') {
+            match('_');
+            factor();
+        } else {
+            factor();
+        }
         // ::= factor | not factor | "_" factor
     }
 
     public void factor() throws IOException {
+        switch (look.tag) {
+            case Tag.ID:
+                match(Tag.ID);
+                break;
+            case Tag.NUM:
+                match(Tag.NUM);
+                break;
+            case Tag.REAL:
+                match(Tag.REAL);
+                break;
+            case Tag.LITERAL:
+                match(Tag.LITERAL);
+                break;
+            case '(':
+                match('(');
+                expression();
+                match(')');
+                break;
+            default:
+                error("Erro de sintaxe. Esperado identificador, constante ou '(' mas encontrado: " + look.tag);
+                break;
+        }
         // ::= identifier | constant | "(" expression ")"
     }
 
     public void relop() throws IOException {
+        switch (look.tag) {
+            case '>':
+                match('>');
+                break;
+            case Tag.GE:
+                match(Tag.GE);
+                break;
+            case '<':
+                match('<');
+                break;
+            case Tag.LE:
+                match(Tag.LE);
+                break;
+            case Tag.NE:
+                match(Tag.NE);
+                break;
+            case Tag.EQ:
+                match(Tag.EQ);
+                break;
+            default:
+                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + look.tag);
+                break;
+        }
         // ::= ">" | ">=" | "<" | "<=" | "<>" | "="
     }
 
     public void addop() throws IOException {
+        switch (look.tag) {
+            case '+':
+                match('+');
+                break;
+            case '-':
+                match('-');
+                break;
+            case Tag.OR:
+                match(Tag.OR);
+                break;
+            default:
+                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + look.tag);
+                break;
+        }
         // ::= "+" | "_" | or
     }
 
     public void mulop() throws IOException {
+        switch (look.tag) {
+            case '*':
+                match('*');                
+                break;
+            case '/':
+                match('/');                
+                break;
+            case '%':
+                match('%');                
+                break;
+            case Tag.AND:
+                match(Tag.AND);                
+                break;
+            default:
+                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + look.tag);
+                break;
+        }
         // ::= "*" | "/" | "%" | and
     }
 
