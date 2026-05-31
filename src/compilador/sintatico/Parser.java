@@ -15,22 +15,30 @@ public class Parser {
 
     // Método para ler o próximo token da entrada
     void move() throws IOException {
-        look = lex.scan(); // Assumindo que seu Lexer possui o método scan() ou getToken()
+        look = lex.scan();
+        if (look == null) {
+            look = new Token(Tag.EOF);
+        }
     }
 
     public void program() throws IOException { // Método inicial da gramática. (Símbolo inicial)
-        match(Tag.CLASS);
-        match(Tag.ID);
-        match('{');
+        if (look.tag == Tag.EOF) {
+            error("Erro de sintaxe. Esperado: " + tagToString(Tag.CLASS) + " encontrado: " + tagToString(look.tag));
+        } else {
+            match(Tag.CLASS);
+            match(Tag.ID);
+            match('{');
 
-        // lista de declarações opcional
-        if (look.tag == Tag.INT || look.tag == Tag.STRING || look.tag == Tag.FLOAT) {
-            decl_list();
+            // lista de declarações opcional
+            if (look.tag == Tag.INT || look.tag == Tag.STRING || look.tag == Tag.FLOAT) {
+                decl_list();
+            }
+
+            body();
+            match('}');
+            // ::= class identifier "{" [decl-list] body "}"
         }
 
-        body();
-        match('}');
-        // ::= class identifier "{" [decl-list] body "}"
     }
 
     public void decl_list() throws IOException {
@@ -72,15 +80,15 @@ public class Parser {
                 match(Tag.FLOAT);
                 break;
             default:
-                error("Erro de sintaxe. Esperado tipo (int, string ou float), mas encontrado: " + look.tag);
+                error("Erro de sintaxe. Esperado tipo (int, string ou float), mas encontrado: " + tagToString(look.tag));
                 break;
         }
     }
 
     public void body() throws IOException {
-        match('{');
+        // match('{');
         stmt_list();
-        match('}');
+        // match('}');
         // ::= "{" stmt_list "}"
     }
 
@@ -126,7 +134,11 @@ public class Parser {
                 break;
 
             default:
-                error("Erro de sintaxe. Comando inválido ou malformado. Encontrado: " + look.tag);
+                if (look.tag == Tag.EOF) {
+                    error("Erro de sintaxe. Fim de arquivo inesperado.");
+                } else {
+                    error("Erro de sintaxe. Comando inválido ou malformado. Encontrado: " + tagToString(look.tag));
+                }
                 break;
         }
         // ::= assign_stmt | if_stmt | do_stmt | repeat_stmt | read_stmt | write_stmt
@@ -228,8 +240,8 @@ public class Parser {
     }
 
     public void expressionf() throws IOException {
-        if (look.tag == '>' || look.tag == Tag.GE || look.tag == '<' || 
-            look.tag == Tag.LE || look.tag == Tag.NE || look.tag == Tag.EQ) {
+        if (look.tag == '>' || look.tag == Tag.GE || look.tag == '<' ||
+                look.tag == Tag.LE || look.tag == Tag.NE || look.tag == Tag.EQ) {
             relop();
             simple_expr();
         }
@@ -243,7 +255,7 @@ public class Parser {
     }
 
     public void simple_exprf() throws IOException {
-        if(look.tag == '+' || look.tag == '-' || look.tag == Tag.OR){
+        if (look.tag == '+' || look.tag == '-' || look.tag == Tag.OR) {
             addop();
             term();
             simple_exprf();
@@ -258,9 +270,9 @@ public class Parser {
     }
 
     public void termf() throws IOException {
-        if(look.tag == '*' || look.tag == '/' || look.tag == '%' || look.tag == Tag.AND){
+        if (look.tag == '*' || look.tag == '/' || look.tag == '%' || look.tag == Tag.AND) {
             mulop();
-            factor();
+            factor_a();
             termf();
         }
         // ::= mulop factor_a termf | λ
@@ -270,13 +282,13 @@ public class Parser {
         if (look.tag == Tag.NOT) {
             match(Tag.NOT);
             factor();
-        } else if (look.tag == '_') {
-            match('_');
+        } else if (look.tag == '-') {
+            match('-');
             factor();
         } else {
             factor();
         }
-        // ::= factor | not factor | "_" factor
+        // ::= factor | not factor | "-" factor
     }
 
     public void factor() throws IOException {
@@ -299,7 +311,7 @@ public class Parser {
                 match(')');
                 break;
             default:
-                error("Erro de sintaxe. Esperado identificador, constante ou '(' mas encontrado: " + look.tag);
+                error("Erro de sintaxe. Esperado identificador, constante ou '(' mas encontrado: " + tagToString(look.tag));
                 break;
         }
         // ::= identifier | constant | "(" expression ")"
@@ -326,7 +338,7 @@ public class Parser {
                 match(Tag.EQ);
                 break;
             default:
-                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + look.tag);
+                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
                 break;
         }
         // ::= ">" | ">=" | "<" | "<=" | "<>" | "="
@@ -344,7 +356,7 @@ public class Parser {
                 match(Tag.OR);
                 break;
             default:
-                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + look.tag);
+                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
                 break;
         }
         // ::= "+" | "_" | or
@@ -353,19 +365,19 @@ public class Parser {
     public void mulop() throws IOException {
         switch (look.tag) {
             case '*':
-                match('*');                
+                match('*');
                 break;
             case '/':
-                match('/');                
+                match('/');
                 break;
             case '%':
-                match('%');                
+                match('%');
                 break;
             case Tag.AND:
-                match(Tag.AND);                
+                match(Tag.AND);
                 break;
             default:
-                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + look.tag);
+                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
                 break;
         }
         // ::= "*" | "/" | "%" | and
@@ -377,7 +389,42 @@ public class Parser {
         if (look.tag == t) {
             move();
         } else {
-            error("Erro de sintaxe. Esperado: " + t + " encontrado: " + look.tag);
+            error("Erro de sintaxe. Esperado: " + tagToString(t) + " encontrado: " + tagToString(look.tag));
+        }
+    }
+
+    private String tagToString(int tag) {
+        switch (tag) {
+            case Tag.NUM: return "NUM";
+            case Tag.REAL: return "REAL";
+            case Tag.ID: return "ID";
+            case Tag.LITERAL: return "LITERAL";
+            case Tag.CLASS: return "CLASS";
+            case Tag.INT: return "INT";
+            case Tag.STRING: return "STRING";
+            case Tag.FLOAT: return "FLOAT";
+            case Tag.IF: return "IF";
+            case Tag.ELSE: return "ELSE";
+            case Tag.DO: return "DO";
+            case Tag.WHILE: return "WHILE";
+            case Tag.REPEAT: return "REPEAT";
+            case Tag.UNTIL: return "UNTIL";
+            case Tag.READ: return "READ";
+            case Tag.WRITE: return "WRITE";
+            case Tag.ASSIGN: return ":=";
+            case Tag.EQ: return "=";
+            case Tag.NE: return "<>";
+            case Tag.LE: return "<=";
+            case Tag.GE: return ">=";
+            case Tag.AND: return "AND";
+            case Tag.OR: return "OR";
+            case Tag.NOT: return "NOT";
+            case Tag.EOF: return "EOF";
+            default:
+                if (tag < 256) {
+                    return String.valueOf((char) tag);
+                }
+                return String.valueOf(tag);
         }
     }
 
