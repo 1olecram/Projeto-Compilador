@@ -41,14 +41,14 @@ public class Parser {
             match(Tag.ID);
             match('{');
 
-            if (isTypeToken(look.tag)) {
+            if (look.tag == Tag.INT || look.tag == Tag.STRING || look.tag == Tag.FLOAT) {
                 decl_list();
             }
 
             body();
             match('}');
             if(look.tag != Tag.EOF) {
-                error("Fim de arquivo esperado, mas encontrado: " + tagToString(look.tag));
+                error("Erro de sintaxe. Fim de arquivo esperado, mas encontrado: " + tagToString(look.tag));
             }
         } catch (RuntimeException | Error e) {
             recordError(e.getMessage());
@@ -57,7 +57,7 @@ public class Parser {
 
     // decl-list ::= decl ";" { decl ";" }
     public void decl_list() throws IOException {
-        while (isTypeToken(look.tag)) {
+        while (look.tag == Tag.INT || look.tag == Tag.STRING || look.tag == Tag.FLOAT) {
             try {
                 decl();
                 match(';');
@@ -85,7 +85,7 @@ public class Parser {
 
     private void declareIdentifier(Type declaredType) throws IOException {
         if (look.tag != Tag.ID) {
-            error("Esperado identificador, mas encontrado: " + tagToString(look.tag));
+            error("Erro de sintaxe. Esperado identificador, mas encontrado: " + tagToString(look.tag));
         }
         String identifier = currentIdentifier();
         semantic.declare(identifier, declaredType, lex.getLine());
@@ -105,7 +105,7 @@ public class Parser {
                 match(Tag.FLOAT);
                 return Type.FLOAT;
             default:
-                error("Esperado tipo (int, string ou float), mas encontrado: " + tagToString(look.tag));
+                error("Erro de sintaxe. Esperado tipo (int, string ou float), mas encontrado: " + tagToString(look.tag));
                 return Type.ERROR;
         }
     }
@@ -119,7 +119,12 @@ public class Parser {
 
     // stmt-list ::= stmt ";" { stmt ";" }
     public void stmt_list() throws IOException {
-        while (isStmtStart(look.tag)) {
+        while (look.tag == Tag.ID ||
+                look.tag == Tag.IF ||
+                look.tag == Tag.DO ||
+                look.tag == Tag.REPEAT ||
+                look.tag == Tag.READ ||
+                look.tag == Tag.WRITE) {
             try {
                 stmt();
                 match(';');
@@ -153,9 +158,9 @@ public class Parser {
                 break;
             default:
                 if (look.tag == Tag.EOF) {
-                    error("Fim de arquivo inesperado.");
+                    error("Erro de sintaxe. Fim de arquivo inesperado.");
                 }
-                error("Comando inválido ou malformado. Encontrado: " + tagToString(look.tag));
+                error("Erro de sintaxe. Comando inválido ou malformado. Encontrado: " + tagToString(look.tag));
         }
     }
 
@@ -268,7 +273,8 @@ public class Parser {
 
     // expression' ::= relop simple-expr | λ
     public Type expressionf(Type left) throws IOException {
-        if (isRelop(look.tag)) {
+        if (look.tag == '>' || look.tag == Tag.GE || look.tag == '<' ||
+                look.tag == Tag.LE || look.tag == Tag.NE || look.tag == Tag.EQ) {
             int op = look.tag;
             relop();
             Type right = simple_expr();
@@ -368,7 +374,7 @@ public class Parser {
                 return type;
             }
             default:
-                error("Esperado identificador, constante ou '(' mas encontrado: " + tagToString(look.tag));
+                error("Erro de sintaxe. Esperado identificador, constante ou '(' mas encontrado: " + tagToString(look.tag));
                 return Type.ERROR;
         }
     }
@@ -383,7 +389,7 @@ public class Parser {
             case Tag.NE: match(Tag.NE); break;
             case Tag.EQ: match(Tag.EQ); break;
             default:
-                error("Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
+                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
         }
     }
 
@@ -394,7 +400,7 @@ public class Parser {
             case '-':    match('-');    break;
             case Tag.OR: match(Tag.OR); break;
             default:
-                error("Esperado operador aditivo (+, - ou or), mas encontrado: " + tagToString(look.tag));
+                error("Erro de sintaxe. Esperado operador aditivo (+, - ou or), mas encontrado: " + tagToString(look.tag));
         }
     }
 
@@ -406,7 +412,7 @@ public class Parser {
             case '%':     match('%');      break;
             case Tag.AND: match(Tag.AND);  break;
             default:
-                error("Esperado operador multiplicativo (*, /, % ou and), mas encontrado: " + tagToString(look.tag));
+                error("Erro de sintaxe. Esperado operador multiplicativo (*, /, % ou and), mas encontrado: " + tagToString(look.tag));
         }
     }
 
@@ -414,7 +420,7 @@ public class Parser {
         if (look.tag == t) {
             move();
         } else {
-            error("Esperado: " + tagToString(t) + " encontrado: " + tagToString(look.tag));
+            error("Erro de sintaxe. Esperado: " + tagToString(t) + " encontrado: " + tagToString(look.tag));
         }
     }
 
@@ -444,20 +450,6 @@ public class Parser {
         if (look.tag == ';') {
             move();
         }
-    }
-
-    private boolean isStmtStart(int tag) {
-        return tag == Tag.ID || tag == Tag.IF || tag == Tag.DO
-                || tag == Tag.REPEAT || tag == Tag.READ || tag == Tag.WRITE;
-    }
-
-    private boolean isRelop(int tag) {
-        return tag == '>' || tag == Tag.GE || tag == '<'
-                || tag == Tag.LE || tag == Tag.NE || tag == Tag.EQ;
-    }
-
-    private boolean isTypeToken(int tag) {
-        return tag == Tag.INT || tag == Tag.STRING || tag == Tag.FLOAT;
     }
 
     private String currentIdentifier() {
@@ -498,7 +490,7 @@ public class Parser {
     }
 
     void error(String s) {
-        String message = "Perto da linha " + lex.getLine() + ": " + s;
+        String message = "Erro de sintaxe. Perto da linha " + lex.getLine() + ": " + s;
         errors.add(message);
         throw new ParseFailure();
     }
