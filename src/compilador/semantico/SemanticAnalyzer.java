@@ -19,12 +19,13 @@ public class SemanticAnalyzer {
     private final Map<String, Type> symbols = new HashMap<>();
     private final List<String> errors = new ArrayList<>();
 
-    public void declare(String name, Type type, int line) {
+    public boolean declare(String name, Type type, int line) {
         if (symbols.containsKey(name)) {
             semanticError(line, "Identificador já declarado: " + name);
-            return;
+            return false;
         }
         symbols.put(name, type);
+        return true;
     }
 
     public Type resolve(String name, int line) {

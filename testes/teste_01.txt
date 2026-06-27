@@ -8,7 +8,9 @@ class Teste1{
     Bloco
   */
   
-  write("Digite o valor da base:"); 
-  read (base); 
-  area := base*altura/2.0;
+  {
+    write("Digite o valor da base:"); 
+    read (base); 
+    area := base*altura/2.0;
+  }
 }
