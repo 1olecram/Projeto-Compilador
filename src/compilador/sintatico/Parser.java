@@ -46,6 +46,10 @@ public class Parser {
             }
 
             body();
+            match('}');
+            if(look.tag != Tag.EOF) {
+                error("Fim de arquivo esperado, mas encontrado: " + tagToString(look.tag));
+            }
         } catch (RuntimeException | Error e) {
             recordError(e.getMessage());
         }
