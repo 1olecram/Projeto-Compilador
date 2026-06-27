@@ -23,7 +23,7 @@ Este repositório contém a implementação do "Projeto de Compiladores": um Ana
    Certifique-se de ter o `javac` disponível na linha de comando e execute a partir da raiz do projeto:
 
 ```bash
-javac src/compilador/*.java src/compilador/lexico/*.java src/compilador/sintatico/*.java
+javac src/compilador/.java src/compilador/lexico/.java src/compilador/semantico/.java src/compilador/sintatico/.java
 ```
 
 2. **Execução**:

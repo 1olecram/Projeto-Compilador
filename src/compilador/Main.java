@@ -20,8 +20,15 @@ public class Main {
             
             // Chama o símbolo inicial da sua gramática (ex: programa)
             parse.program();
-            
-            System.out.println("Análise concluída com sucesso! Código sintaticamente correto.");
+
+            if (parse.hasErrors()) {
+                System.err.println("Foram encontrados erros de compilação:");
+                for (String error : parse.getErrors()) {
+                    System.err.println(error);
+                }
+            } else {
+                System.out.println("Análise concluída com sucesso! Código sintática e semanticamente correto.");
+            }
             
             // Fecha o Lexer após a análise
             lex.close();

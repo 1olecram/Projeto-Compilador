@@ -1,15 +1,33 @@
 package compilador.sintatico;
 
-import compilador.lexico.*;
-import java.io.*;
+import compilador.lexico.Lexer;
+import compilador.lexico.Literal;
+import compilador.lexico.Num;
+import compilador.lexico.Real;
+import compilador.lexico.Tag;
+import compilador.lexico.Token;
+import compilador.lexico.Word;
+import compilador.semantico.SemanticAnalyzer;
+import compilador.semantico.SemanticAnalyzer.Type;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.io.IOException;
 
 public class Parser {
-    private Lexer lex; // O analisador léxico
-    private Token look; // O token atual de lookahead
+    private final Lexer lex;
+    private Token look;
+    private final SemanticAnalyzer semantic;
+    private final List<String> errors = new ArrayList<>();
 
-    // O construtor recebe o lexer já instanciado e lê o primeiro token
+    private static class ParseFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    // Construtor: recebe o lexer e prepara o primeiro token para o parsing.
     public Parser(Lexer l) throws IOException {
         this.lex = l;
+        this.semantic = new SemanticAnalyzer();
         move();
     }
 
@@ -21,146 +39,152 @@ public class Parser {
         }
     }
 
-    public void program() throws IOException { // Método inicial da gramática. (Símbolo inicial)
-        if (look.tag == Tag.EOF) {
-            error("Erro de sintaxe. Esperado: " + tagToString(Tag.CLASS) + " encontrado: " + tagToString(look.tag));
-        } else {
+    public void program() throws IOException {
+        // programa ::= class identifier "{" [decl-list] body "}"
+        try {
             match(Tag.CLASS);
             match(Tag.ID);
             match('{');
 
-            // lista de declarações opcional
-            if (look.tag == Tag.INT || look.tag == Tag.STRING || look.tag == Tag.FLOAT) {
+            if (isTypeToken(look.tag)) {
                 decl_list();
             }
 
             body();
             match('}');
-            // ::= class identifier "{" [decl-list] body "}"
+        } catch (RuntimeException | Error e) {
+            recordError(e.getMessage());
         }
-
     }
 
     public void decl_list() throws IOException {
-        decl();
-        match(';');
-        while (look.tag == Tag.INT || look.tag == Tag.STRING || look.tag == Tag.FLOAT) {
-            decl();
-            match(';');
+        // decl-list ::= decl ";" { decl ";" }
+        while (isTypeToken(look.tag)) {
+            try {
+                decl();
+                match(';');
+            } catch (RuntimeException | Error e) {
+                recordError(e.getMessage());
+                recoverToDeclarationBoundary();
+            }
         }
-        // ::= decl ";" { decl ";"}
     }
 
     public void decl() throws IOException {
-        type();
-        ident_list();
-        // ::= type ident-lis
+        // decl ::= type ident-list
+        Type declaredType = type();
+        ident_list(declaredType);
     }
 
-    public void ident_list() throws IOException {
-        match(Tag.ID);
+    public void ident_list(Type declaredType) throws IOException {
+        declareIdentifier(declaredType);
         while (look.tag == ',') {
             match(',');
-            match(Tag.ID);
+            declareIdentifier(declaredType);
         }
-        // ::= identifier {"," identifier}
     }
 
-    public void type() throws IOException {
+    private void declareIdentifier(Type declaredType) throws IOException {
+        if (look.tag != Tag.ID) {
+            error("Erro de sintaxe. Esperado identificador, mas encontrado: " + tagToString(look.tag));
+        }
+        String identifier = ((Word) look).getLexeme();
+        semantic.declare(identifier, declaredType, lex.getLine());
+        match(Tag.ID);
+    }
+
+    public Type type() throws IOException {
+        // type ::= int | string | float
         switch (look.tag) {
             case Tag.INT:
                 match(Tag.INT);
-                break;
-
+                return Type.INT;
             case Tag.STRING:
                 match(Tag.STRING);
-                break;
-
+                return Type.STRING;
             case Tag.FLOAT:
                 match(Tag.FLOAT);
-                break;
+                return Type.FLOAT;
             default:
                 error("Erro de sintaxe. Esperado tipo (int, string ou float), mas encontrado: " + tagToString(look.tag));
-                break;
+                return Type.ERROR;
         }
     }
 
     public void body() throws IOException {
-        // match('{');
+        // body ::= "{" stmt-list "}"
         stmt_list();
-        // match('}');
-        // ::= "{" stmt_list "}"
     }
 
     public void stmt_list() throws IOException {
-        stmt();
-        match(';');
-        while (look.tag == Tag.ID ||
-                look.tag == Tag.IF ||
-                look.tag == Tag.DO ||
-                look.tag == Tag.REPEAT ||
-                look.tag == Tag.READ ||
-                look.tag == Tag.WRITE) {
-            stmt();
-            match(';');
+        // stmt-list ::= stmt ";" { stmt ";" }
+        while (isStmtStart(look.tag)) {
+            try {
+                stmt();
+                match(';');
+            } catch (RuntimeException | Error e) {
+                recordError(e.getMessage());
+                recoverToStatementBoundary();
+            }
         }
-        // ::= stmt ";" { stmt ";" }
     }
 
     public void stmt() throws IOException {
-        switch (look.tag) {
-            case Tag.ID:
-                assign_stmt();
-                break;
-
-            case Tag.IF:
-                if_stmt();
-                break;
-
-            case Tag.DO:
-                do_stmt();
-                break;
-
-            case Tag.REPEAT:
-                repeat_stmt();
-                break;
-
-            case Tag.READ:
-                read_stmt();
-                break;
-
-            case Tag.WRITE:
-                write_stmt();
-                break;
-
-            default:
-                if (look.tag == Tag.EOF) {
-                    error("Erro de sintaxe. Fim de arquivo inesperado.");
-                } else {
+        // stmt ::= assign-stmt | if-stmt | do-stmt | repeat-stmt | read-stmt | write-stmt
+        try {
+            switch (look.tag) {
+                case Tag.ID:
+                    assign_stmt();
+                    break;
+                case Tag.IF:
+                    if_stmt();
+                    break;
+                case Tag.DO:
+                    do_stmt();
+                    break;
+                case Tag.REPEAT:
+                    repeat_stmt();
+                    break;
+                case Tag.READ:
+                    read_stmt();
+                    break;
+                case Tag.WRITE:
+                    write_stmt();
+                    break;
+                default:
+                    if (look.tag == Tag.EOF) {
+                        error("Erro de sintaxe. Fim de arquivo inesperado.");
+                    }
                     error("Erro de sintaxe. Comando inválido ou malformado. Encontrado: " + tagToString(look.tag));
-                }
-                break;
+            }
+        } catch (RuntimeException | Error e) {
+            throw e;
         }
-        // ::= assign_stmt | if_stmt | do_stmt | repeat_stmt | read_stmt | write_stmt
     }
 
     public void assign_stmt() throws IOException {
+        // assign-stmt ::= identifier ":=" simple_expr
+        String identifier = currentIdentifier();
+        Type targetType = semantic.resolve(identifier, lex.getLine());
         match(Tag.ID);
         match(Tag.ASSIGN);
-        simple_expr();
-        // ::= identifier ":=" simple_expr
+        Type valueType = simple_expr();
+        if (targetType != Type.ERROR && valueType != Type.ERROR && targetType != valueType) {
+            error("Tipos incompatíveis em atribuição para " + identifier + ": esperado " + targetType + " encontrado " + valueType);
+        }
     }
 
     public void if_stmt() throws IOException {
+        // if-stmt ::= if "(" condition ")" "{" stmt-list "}" [else "{" stmt-list "}"]
         match(Tag.IF);
         match('(');
-        condition();
+        Type conditionType = condition();
+        semantic.ensureBoolean(conditionType, lex.getLine(), "Comando if");
         match(')');
         match('{');
         stmt_list();
         match('}');
         if_stmtf();
-        // ::= if "(" condition ")" "{" stmt_list "}" if_stmtf
     }
 
     public void if_stmtf() throws IOException {
@@ -170,154 +194,178 @@ public class Parser {
             stmt_list();
             match('}');
         }
-        // ::= else “{“ stmt_list “}” | λ
     }
 
     public void do_stmt() throws IOException {
+        // do-stmt ::= do "{" stmt-list "}" do-suffix
         match(Tag.DO);
         match('{');
         stmt_list();
         match('}');
         do_suffix();
-        // ::= do “{“ stmt_list “}” do_suffix
     }
 
     public void do_suffix() throws IOException {
+        // do-suffix ::= while "(" condition ")"
         match(Tag.WHILE);
         match('(');
-        condition();
+        Type conditionType = condition();
+        semantic.ensureBoolean(conditionType, lex.getLine(), "Comando while");
         match(')');
-        // ::= while “(“ condition “)”
     }
 
     public void repeat_stmt() throws IOException {
+        // repeat-stmt ::= repeat "{" stmt-list "}" stmt-suffix
         match(Tag.REPEAT);
         match('{');
         stmt_list();
         match('}');
         stmt_suffix();
-        // ::= repeat “{“ stmt_list “}” stmt_suffix
     }
 
     public void stmt_suffix() throws IOException {
+        // stmt-suffix ::= until "(" condition ")"
         match(Tag.UNTIL);
         match('(');
-        condition();
+        Type conditionType = condition();
+        semantic.ensureBoolean(conditionType, lex.getLine(), "Comando until");
         match(')');
-        // ::= until “(“ condition “)”
     }
 
     public void read_stmt() throws IOException {
+        // read-stmt ::= read "(" identifier ")"
         match(Tag.READ);
         match('(');
+        String identifier = currentIdentifier();
+        semantic.resolve(identifier, lex.getLine());
         match(Tag.ID);
         match(')');
-        // ::= read "(" identifier ")"
     }
 
     public void write_stmt() throws IOException {
+        // write-stmt ::= write "(" writable ")"
         match(Tag.WRITE);
         match('(');
         writable();
         match(')');
-        // ::= write "(" writable ")"
     }
 
-    public void writable() throws IOException {
-        simple_expr();
-        // ::= simple_expr
+    public Type writable() throws IOException {
+        // writable ::= simple-expr
+        return simple_expr();
     }
 
-    public void condition() throws IOException {
-        expression();
-        // ::= expression
+    public Type condition() throws IOException {
+        // condition ::= expression
+        return expression();
     }
 
-    public void expression() throws IOException {
-        simple_expr();
-        expressionf();
-        // ::= simple_expr expressionf
+    public Type expression() throws IOException {
+        // expression ::= simple-expr { or simple-expr }
+        Type left = and_expr();
+        while (look.tag == Tag.OR) {
+            match(Tag.OR);
+            Type right = and_expr();
+            left = semantic.applyBooleanOp(left, Tag.OR, right, lex.getLine());
+        }
+        return left;
     }
 
-    public void expressionf() throws IOException {
-        if (look.tag == '>' || look.tag == Tag.GE || look.tag == '<' ||
-                look.tag == Tag.LE || look.tag == Tag.NE || look.tag == Tag.EQ) {
+    private Type and_expr() throws IOException {
+        // expressão auxiliar para dar precedência ao operador and
+        Type left = rel_expr();
+        while (look.tag == Tag.AND) {
+            match(Tag.AND);
+            Type right = rel_expr();
+            left = semantic.applyBooleanOp(left, Tag.AND, right, lex.getLine());
+        }
+        return left;
+    }
+
+    private Type rel_expr() throws IOException {
+        // expression ::= simple-expr [ relop simple-expr ]
+        Type left = simple_expr();
+        if (isRelop(look.tag)) {
+            int op = look.tag;
             relop();
-            simple_expr();
+            Type right = simple_expr();
+            left = semantic.applyRelOp(left, op, right, lex.getLine());
         }
-        // ::= relop simple_expr | λ
+        return left;
     }
 
-    public void simple_expr() throws IOException {
-        term();
-        simple_exprf();
-        // ::= term simple_exprf
-    }
-
-    public void simple_exprf() throws IOException {
-        if (look.tag == '+' || look.tag == '-' || look.tag == Tag.OR) {
+    public Type simple_expr() throws IOException {
+        // simple-expr ::= term { addop term }
+        Type left = term();
+        while (look.tag == '+' || look.tag == '-') {
+            int op = look.tag;
             addop();
-            term();
-            simple_exprf();
+            Type right = term();
+            left = semantic.applyAddOp(left, op, right, lex.getLine());
         }
-        // ::= addop term simple_exprf | λ
+        return left;
     }
 
-    public void term() throws IOException {
-        factor_a();
-        termf();
-        // ::= factor_a termf
-    }
-
-    public void termf() throws IOException {
-        if (look.tag == '*' || look.tag == '/' || look.tag == '%' || look.tag == Tag.AND) {
+    public Type term() throws IOException {
+        // term ::= factor-a { mulop factor-a }
+        Type left = factor_a();
+        while (look.tag == '*' || look.tag == '/' || look.tag == '%') {
+            int op = look.tag;
             mulop();
-            factor_a();
-            termf();
+            Type right = factor_a();
+            if (op == '/') {
+                left = semantic.promoteDivision(left, right, lex.getLine());
+            } else {
+                left = semantic.applyMulOp(left, op, right, lex.getLine());
+            }
         }
-        // ::= mulop factor_a termf | λ
+        return left;
     }
 
-    public void factor_a() throws IOException {
+    public Type factor_a() throws IOException {
+        // factor-a ::= factor | not factor | "-" factor
         if (look.tag == Tag.NOT) {
             match(Tag.NOT);
-            factor();
-        } else if (look.tag == '-') {
-            match('-');
-            factor();
-        } else {
-            factor();
+            return semantic.applyNot(factor_a(), lex.getLine());
         }
-        // ::= factor | not factor | "-" factor
+        if (look.tag == '-') {
+            match('-');
+            return semantic.applyUnaryMinus(factor_a(), lex.getLine());
+        }
+        return factor();
     }
 
-    public void factor() throws IOException {
+    public Type factor() throws IOException {
+        // factor ::= identifier | constant | "(" expression ")"
         switch (look.tag) {
-            case Tag.ID:
+            case Tag.ID: {
+                String identifier = currentIdentifier();
+                Type type = semantic.resolve(identifier, lex.getLine());
                 match(Tag.ID);
-                break;
+                return type;
+            }
             case Tag.NUM:
                 match(Tag.NUM);
-                break;
+                return Type.INT;
             case Tag.REAL:
                 match(Tag.REAL);
-                break;
+                return Type.FLOAT;
             case Tag.LITERAL:
                 match(Tag.LITERAL);
-                break;
+                return Type.STRING;
             case '(':
                 match('(');
-                expression();
+                Type type = expression();
                 match(')');
-                break;
+                return type;
             default:
                 error("Erro de sintaxe. Esperado identificador, constante ou '(' mas encontrado: " + tagToString(look.tag));
-                break;
+                return Type.ERROR;
         }
-        // ::= identifier | constant | "(" expression ")"
     }
 
     public void relop() throws IOException {
+        // relop ::= ">" | ">=" | "<" | "<=" | "<>" | "="
         switch (look.tag) {
             case '>':
                 match('>');
@@ -339,12 +387,12 @@ public class Parser {
                 break;
             default:
                 error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
-                break;
         }
         // ::= ">" | ">=" | "<" | "<=" | "<>" | "="
     }
 
     public void addop() throws IOException {
+        // addop ::= "+" | "-" | or
         switch (look.tag) {
             case '+':
                 match('+');
@@ -356,13 +404,13 @@ public class Parser {
                 match(Tag.OR);
                 break;
             default:
-                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
-                break;
+                error("Erro de sintaxe. Esperado operador aditivo, mas encontrado: " + tagToString(look.tag));
         }
         // ::= "+" | "_" | or
     }
 
     public void mulop() throws IOException {
+        // mulop ::= "*" | "/" | "%" | and
         switch (look.tag) {
             case '*':
                 match('*');
@@ -377,8 +425,7 @@ public class Parser {
                 match(Tag.AND);
                 break;
             default:
-                error("Erro de sintaxe. Esperado operador relacional, mas encontrado: " + tagToString(look.tag));
-                break;
+                error("Erro de sintaxe. Esperado operador multiplicativo, mas encontrado: " + tagToString(look.tag));
         }
         // ::= "*" | "/" | "%" | and
     }
@@ -386,11 +433,56 @@ public class Parser {
     // O método match verifica se o token atual é o esperado.
     // Se for, ele consome o token e avança. Se não, dispara um erro.
     void match(int t) throws IOException {
+        // Consome o token atual se ele corresponder ao esperado.
         if (look.tag == t) {
             move();
         } else {
             error("Erro de sintaxe. Esperado: " + tagToString(t) + " encontrado: " + tagToString(look.tag));
         }
+    }
+
+    public List<String> getErrors() {
+        List<String> allErrors = new ArrayList<>(errors);
+        allErrors.addAll(semantic.getErrors());
+        return Collections.unmodifiableList(allErrors);
+    }
+
+    public boolean hasErrors() {
+        return !errors.isEmpty() || semantic.hasErrors();
+    }
+
+    private void recoverToStatementBoundary() throws IOException {
+        while (look.tag != Tag.EOF && look.tag != ';' && look.tag != '}') {
+            move();
+        }
+        if (look.tag == ';') {
+            move();
+        }
+    }
+
+    private void recoverToDeclarationBoundary() throws IOException {
+        while (look.tag != Tag.EOF && look.tag != ';' && look.tag != '{' && look.tag != '}') {
+            move();
+        }
+        if (look.tag == ';') {
+            move();
+        }
+    }
+
+    private boolean isStmtStart(int tag) {
+        return tag == Tag.ID || tag == Tag.IF || tag == Tag.DO || tag == Tag.REPEAT || tag == Tag.READ || tag == Tag.WRITE;
+    }
+
+    private boolean isRelop(int tag) {
+        return tag == '>' || tag == Tag.GE || tag == '<' || tag == Tag.LE || tag == Tag.NE || tag == Tag.EQ;
+    }
+
+    private boolean isTypeToken(int tag) {
+        return tag == Tag.INT || tag == Tag.STRING || tag == Tag.FLOAT;
+    }
+
+    private String currentIdentifier() {
+        return ((Word) look).getLexeme();
     }
 
     private String tagToString(int tag) {
@@ -429,6 +521,15 @@ public class Parser {
     }
 
     void error(String s) {
-        throw new Error("Perto da linha " + lex.getLine() + ": " + s);
+        String message = "Perto da linha " + lex.getLine() + ": " + s;
+        errors.add(message);
+        throw new ParseFailure();
+    }
+
+    private void recordError(String message) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        errors.add(message);
     }
 }
