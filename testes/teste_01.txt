@@ -1,0 +1,16 @@
+class Teste1{ 
+  int base, altura;  
+  float area; 
+
+  // Comentario linha
+  /* 
+    Comentario
+    Bloco
+  */
+  
+  {
+    write("Digite o valor da base:"); 
+    read (base); 
+    area := base*altura/2.0;
+  }
+}

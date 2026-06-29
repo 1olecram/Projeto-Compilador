@@ -30,3 +30,7 @@ replay_pid*
 .project
 .classpath
 .settings/
+
+
+#Linguagem Objeto
+.j
