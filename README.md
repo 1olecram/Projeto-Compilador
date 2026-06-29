@@ -13,9 +13,12 @@ Este repositório contém a implementação do "Projeto de Compiladores": um Ana
 ## Estrutura do Projeto
 
 - `src/compilador/`: Contém o ponto de entrada principal (`Main.java`).
-- `src/compilador/lexico/`: Contém as classes relativas à análise léxica (tokens, tabela de símbolos e analisador léxico).
-- `src/compilador/sintatico/`: Contém a classe do analisador sintático (`Parser.java`).
+- `src/compilador/lexico/`: Classes relativas à análise léxica (tokens, tabela de símbolos e scanner).
+- `src/compilador/sintatico/`: Classe do analisador sintático (`Parser.java`).
+- `src/compilador/semantico/`: Classes responsáveis pela validação de tipos e regras semânticas (`SemanticAnalyzer.java`).
+- `src/compilador/gerador/`: Classes responsáveis por traduzir a árvore do programa para código Jasmin (`JasminGenerator.java`).
 - `testes/`: Diretório contendo casos de teste (ex: `teste_01.txt`, `teste_06.txt`).
+- `jasmin-2.4/`: Ferramenta externa utilizada para montar o arquivo `.j` em `.class`.
 
 ## Como Compilar e Executar
 
@@ -23,7 +26,7 @@ Este repositório contém a implementação do "Projeto de Compiladores": um Ana
    Certifique-se de ter o `javac` disponível na linha de comando e execute a partir da raiz do projeto:
 
 ```bash
-javac src/compilador/.java src/compilador/lexico/.java src/compilador/semantico/.java src/compilador/sintatico/.java
+javac javac src/compilador/*.java src/compilador/gerador/*.java src/compilador/lexico/*.java src/compilador/semantico/*.java src/compilador/sintatico/*.java
 ```
 
 2. **Execução**:
@@ -33,6 +36,13 @@ javac src/compilador/.java src/compilador/lexico/.java src/compilador/semantico/
 java -cp src compilador.Main testes/teste_06.txt
 ```
 
+```bash
+java -jar jasmin-2.4\jasmin-2.4\jasmin.jar testes\teste_06.j
+```
+*(Após executar esse comando, o terminal exibirá uma mensagem semelhante a: ```Generated : Teste06.class```. Utilize o nome do arquivo gerado (neste exemplo, ```Teste06```), ou seja, o nome antes da extensão ```.class```, no próximo comando)*
+```bash
+java Teste06
+```
 *(O compilador executará as análises léxica e sintática sobre o arquivo. Caso o código esteja sintaticamente correto, uma mensagem de sucesso será exibida; se houver algum erro de sintaxe, a execução exibirá o erro e a linha aproximada do ocorrido).*
 O argumento final é o arquivo de entrada a ser analisado. Para testar outros casos, basta trocar o nome do arquivo.
 
