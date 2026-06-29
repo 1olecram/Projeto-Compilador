@@ -45,7 +45,7 @@ java Teste06
 ```
 *(O compilador executará as análises léxica, sintática e semântica sobre o arquivo de entrada. Caso o código esteja correto, uma mensagem de sucesso será exibida e o código intermediário/objeto será gerado. Se houver algum erro léxico, sintático ou semântico, a execução exibirá uma mensagem indicando o tipo do erro e a linha aproximada onde ele ocorreu.)*
 
-O argumento final corresponde ao arquivo de entrada que será analisado. Para testar outros casos, basta substituir o nome do arquivo.
+O argumento na segunda parte (Execução) corresponde ao arquivo de entrada que será analisado. Para testar outros casos, basta substituir o nome do arquivo.
 ## Boas Práticas
 
 - Foi utilizada a interface `Closeable` e blocos `try-with-resources` para evitar Resource Leaks.
