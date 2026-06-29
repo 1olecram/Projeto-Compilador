@@ -1,11 +1,16 @@
 package compilador.sintatico;
 
+import compilador.lexico.Num;
+import compilador.lexico.Real;
+import compilador.lexico.Literal;
 import compilador.lexico.Lexer;
 import compilador.lexico.Tag;
 import compilador.lexico.Token;
 import compilador.lexico.Word;
 import compilador.semantico.SemanticAnalyzer;
 import compilador.semantico.SemanticAnalyzer.Type;
+import compilador.gerador.JasminGenerator;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,6 +21,18 @@ public class Parser {
     private Token look;
     private final SemanticAnalyzer semantic;
     private final List<String> errors = new ArrayList<>();
+    
+    private final JasminGenerator generator;
+    private String programName = "Programa";
+
+    private static class ExprResult {
+        final Type type;
+        final String code;
+        ExprResult(Type type, String code) {
+            this.type = type;
+            this.code = code;
+        }
+    }
 
     private static class ParseFailure extends RuntimeException {
         private static final long serialVersionUID = 1L;
@@ -24,7 +41,12 @@ public class Parser {
     public Parser(Lexer l) throws IOException {
         this.lex = l;
         this.semantic = new SemanticAnalyzer();
+        this.generator = new JasminGenerator();
         move();
+    }
+
+    public JasminGenerator getGenerator() {
+        return generator;
     }
 
     void move() throws IOException {
@@ -38,7 +60,11 @@ public class Parser {
     public void program() throws IOException {
         try {
             match(Tag.CLASS);
+            if (look.tag == Tag.ID) {
+                programName = currentIdentifier();
+            }
             match(Tag.ID);
+            generator.begin(programName);
             match('{');
 
             if (look.tag == Tag.INT || look.tag == Tag.STRING || look.tag == Tag.FLOAT) {
@@ -47,6 +73,7 @@ public class Parser {
 
             body();
             match('}');
+            generator.finish();
             if(look.tag != Tag.EOF) {
                 error("Erro de sintaxe. Fim de arquivo esperado, mas encontrado: " + tagToString(look.tag));
             }
@@ -89,6 +116,7 @@ public class Parser {
         }
         String identifier = currentIdentifier();
         semantic.declare(identifier, declaredType, lex.getLine());
+        generator.declare(identifier, declaredType);
         match(Tag.ID);
     }
 
@@ -170,71 +198,92 @@ public class Parser {
         Type targetType = semantic.resolve(identifier, lex.getLine());
         match(Tag.ID);
         match(Tag.ASSIGN);
-        Type valueType = simple_expr();
-        if (targetType != Type.ERROR && valueType != Type.ERROR && targetType != valueType) {
+        ExprResult expr = simple_expr();
+        if (targetType != Type.ERROR && expr.type != Type.ERROR && targetType != expr.type) {
             error("Tipos incompatíveis em atribuição para " + identifier
-                    + ": esperado " + targetType + " encontrado " + valueType);
+                    + ": esperado " + targetType + " encontrado " + expr.type);
         }
+        generator.append(expr.code);
+        generator.append(generator.storeVar(identifier));
     }
 
     // if-stmt ::= if "(" condition ")" "{" stmt-list "}" if-stmt'
     public void if_stmt() throws IOException {
         match(Tag.IF);
         match('(');
-        Type condType = condition();
-        semantic.ensureBoolean(condType, lex.getLine(), "Comando if");
+        ExprResult cond = condition();
+        semantic.ensureBoolean(cond.type, lex.getLine(), "Comando if");
         match(')');
+        
+        String labelElse = generator.newLabel("L_if_else");
+        String labelEnd = generator.newLabel("L_if_end");
+        
+        generator.append(cond.code);
+        generator.append("ifeq " + labelElse + "\n");
+        
         match('{');
         stmt_list();
         match('}');
-        if_stmtf();
+        
+        generator.append("goto " + labelEnd + "\n");
+        generator.append(labelElse + ":\n");
+        
+        if_stmtf(labelEnd);
     }
 
     // if-stmt' ::= else "{" stmt-list "}" | λ
-    public void if_stmtf() throws IOException {
+    public void if_stmtf(String labelEnd) throws IOException {
         if (look.tag == Tag.ELSE) {
             match(Tag.ELSE);
             match('{');
             stmt_list();
             match('}');
         }
-        // λ
+        generator.append(labelEnd + ":\n");
     }
 
     // do-stmt ::= do "{" stmt-list "}" do-suffix
     public void do_stmt() throws IOException {
         match(Tag.DO);
+        String labelStart = generator.newLabel("L_do_start");
+        generator.append(labelStart + ":\n");
         match('{');
         stmt_list();
         match('}');
-        do_suffix();
+        do_suffix(labelStart);
     }
 
     // do-suffix ::= while "(" condition ")"
-    public void do_suffix() throws IOException {
+    public void do_suffix(String labelStart) throws IOException {
         match(Tag.WHILE);
         match('(');
-        Type condType = condition();
-        semantic.ensureBoolean(condType, lex.getLine(), "Comando while");
+        ExprResult cond = condition();
+        semantic.ensureBoolean(cond.type, lex.getLine(), "Comando while");
         match(')');
+        generator.append(cond.code);
+        generator.append("ifne " + labelStart + "\n");
     }
 
     // repeat-stmt ::= repeat "{" stmt-list "}" stmt-suffix
     public void repeat_stmt() throws IOException {
         match(Tag.REPEAT);
+        String labelStart = generator.newLabel("L_repeat_start");
+        generator.append(labelStart + ":\n");
         match('{');
         stmt_list();
         match('}');
-        stmt_suffix();
+        stmt_suffix(labelStart);
     }
 
     // stmt-suffix ::= until "(" condition ")"
-    public void stmt_suffix() throws IOException {
+    public void stmt_suffix(String labelStart) throws IOException {
         match(Tag.UNTIL);
         match('(');
-        Type condType = condition();
-        semantic.ensureBoolean(condType, lex.getLine(), "Comando until");
+        ExprResult cond = condition();
+        semantic.ensureBoolean(cond.type, lex.getLine(), "Comando until");
         match(')');
+        generator.append(cond.code);
+        generator.append("ifeq " + labelStart + "\n");
     }
 
     // read-stmt ::= read "(" identifier ")"
@@ -242,140 +291,171 @@ public class Parser {
         match(Tag.READ);
         match('(');
         String identifier = currentIdentifier();
-        semantic.resolve(identifier, lex.getLine());
+        Type type = semantic.resolve(identifier, lex.getLine());
         match(Tag.ID);
         match(')');
+        generator.append(generator.read(identifier, type));
     }
 
-    // write-stmt ::= write "(" writable ")"
+    // write-stmt ::= write(" writable ")
     public void write_stmt() throws IOException {
         match(Tag.WRITE);
         match('(');
-        writable();
+        ExprResult expr = writable();
         match(')');
+        generator.append(generator.print(expr.code, expr.type));
     }
 
     // writable ::= simple-expr
-    public Type writable() throws IOException {
+    public ExprResult writable() throws IOException {
         return simple_expr();
     }
 
     // condition ::= expression
-    public Type condition() throws IOException {
+    public ExprResult condition() throws IOException {
         return expression();
     }
 
     // expression ::= simple-expr expression'
-    public Type expression() throws IOException {
-        Type left = simple_expr();
+    public ExprResult expression() throws IOException {
+        ExprResult left = simple_expr();
         return expressionf(left);
     }
 
     // expression' ::= relop simple-expr | λ
-    public Type expressionf(Type left) throws IOException {
+    public ExprResult expressionf(ExprResult left) throws IOException {
         if (look.tag == '>' || look.tag == Tag.GE || look.tag == '<' ||
                 look.tag == Tag.LE || look.tag == Tag.NE || look.tag == Tag.EQ) {
             int op = look.tag;
             relop();
-            Type right = simple_expr();
-            return semantic.applyRelOp(left, op, right, lex.getLine());
+            ExprResult right = simple_expr();
+            Type resType = semantic.applyRelOp(left.type, op, right.type, lex.getLine());
+            String code = generator.relational(left.code, left.type, right.code, right.type, op);
+            return new ExprResult(resType, code);
         }
-        // λ
         return left;
     }
 
     // simple-expr ::= term simple-expr'
-    public Type simple_expr() throws IOException {
-        Type left = term();
+    public ExprResult simple_expr() throws IOException {
+        ExprResult left = term();
         return simple_exprf(left);
     }
 
     // simple-expr' ::= addop term simple-expr' | λ
-    public Type simple_exprf(Type left) throws IOException {
+    public ExprResult simple_exprf(ExprResult left) throws IOException {
         if (look.tag == '+' || look.tag == '-' || look.tag == Tag.OR) {
             int op = look.tag;
             addop();
-            Type right = term();
-            Type result;
+            ExprResult right = term();
+            Type resultType;
+            String code;
             if (op == Tag.OR) {
-                result = semantic.applyBooleanOp(left, Tag.OR, right, lex.getLine());
+                resultType = semantic.applyBooleanOp(left.type, Tag.OR, right.type, lex.getLine());
+                code = generator.booleanOp(left.code, right.code, Tag.OR);
             } else {
-                result = semantic.applyAddOp(left, op, right, lex.getLine());
+                resultType = semantic.applyAddOp(left.type, op, right.type, lex.getLine());
+                if (op == '+' && (left.type == Type.STRING || right.type == Type.STRING)) {
+                    code = generator.stringConcat(left.code, left.type, right.code, right.type);
+                } else {
+                    code = generator.arithmetic(left.code, left.type, right.code, right.type, op, resultType);
+                }
             }
-            return simple_exprf(result);
+            return simple_exprf(new ExprResult(resultType, code));
         }
-        // λ
         return left;
     }
 
     // term ::= factor-a term'
-    public Type term() throws IOException {
-        Type left = factor_a();
+    public ExprResult term() throws IOException {
+        ExprResult left = factor_a();
         return termf(left);
     }
 
     // term' ::= mulop factor-a term' | λ
-    public Type termf(Type left) throws IOException {
+    public ExprResult termf(ExprResult left) throws IOException {
         if (look.tag == '*' || look.tag == '/' || look.tag == '%' || look.tag == Tag.AND) {
             int op = look.tag;
             mulop();
-            Type right = factor_a();
-            Type result;
+            ExprResult right = factor_a();
+            Type resultType;
+            String code;
             if (op == Tag.AND) {
-                result = semantic.applyBooleanOp(left, Tag.AND, right, lex.getLine());
+                resultType = semantic.applyBooleanOp(left.type, Tag.AND, right.type, lex.getLine());
+                code = generator.booleanOp(left.code, right.code, Tag.AND);
             } else if (op == '/') {
-                result = semantic.promoteDivision(left, right, lex.getLine());
+                resultType = semantic.promoteDivision(left.type, right.type, lex.getLine());
+                code = generator.arithmetic(left.code, left.type, right.code, right.type, op, resultType);
             } else {
-                result = semantic.applyMulOp(left, op, right, lex.getLine());
+                resultType = semantic.applyMulOp(left.type, op, right.type, lex.getLine());
+                code = generator.arithmetic(left.code, left.type, right.code, right.type, op, resultType);
             }
-            return termf(result);
+            return termf(new ExprResult(resultType, code));
         }
-        // λ
         return left;
     }
 
     // factor-a ::= factor | not factor | "-" factor
-    public Type factor_a() throws IOException {
+    public ExprResult factor_a() throws IOException {
         if (look.tag == Tag.NOT) {
             match(Tag.NOT);
-            Type operand = factor();
-            return semantic.applyNot(operand, lex.getLine());
+            ExprResult operand = factor();
+            Type resType = semantic.applyNot(operand.type, lex.getLine());
+            String code = generator.unaryNot(operand.code);
+            return new ExprResult(resType, code);
         }
         if (look.tag == '-') {
             match('-');
-            Type operand = factor();
-            return semantic.applyUnaryMinus(operand, lex.getLine());
+            ExprResult operand = factor();
+            Type resType = semantic.applyUnaryMinus(operand.type, lex.getLine());
+            String code = generator.unaryMinus(operand.code, operand.type);
+            return new ExprResult(resType, code);
         }
         return factor();
     }
 
     // factor ::= identifier | constant | "(" expression ")"
-    public Type factor() throws IOException {
+// factor ::= identifier | constant | "(" expression ")"
+// factor ::= identifier | constant | "(" expression ")"
+    public ExprResult factor() throws IOException {
         switch (look.tag) {
             case Tag.ID: {
                 String identifier = currentIdentifier();
                 Type type = semantic.resolve(identifier, lex.getLine());
+                String code = generator.loadVar(identifier);
                 match(Tag.ID);
-                return type;
+                return new ExprResult(type, code);
             }
-            case Tag.NUM:
+            case Tag.NUM: {
+                // Cast correto para a classe Num
+                int val = ((Num) look).value; 
+                String code = generator.intConst(val);
                 match(Tag.NUM);
-                return Type.INT;
-            case Tag.REAL:
+                return new ExprResult(Type.INT, code);
+            }
+            case Tag.REAL: {
+                // Cast correto para a classe Real
+                float val = ((Real) look).value; 
+                String code = generator.floatConst(val);
                 match(Tag.REAL);
-                return Type.FLOAT;
-            case Tag.LITERAL:
+                return new ExprResult(Type.FLOAT, code);
+            }
+            case Tag.LITERAL: {
+                // Cast correto para a classe Literal
+                String val = ((Literal) look).value; 
+                String code = generator.stringConst(val);
                 match(Tag.LITERAL);
-                return Type.STRING;
+                return new ExprResult(Type.STRING, code);
+            }
             case '(': {
                 match('(');
-                Type type = expression();
+                ExprResult res = expression();
                 match(')');
-                return type;
+                return res;
             }
             default:
                 error("Erro de sintaxe. Esperado identificador, constante ou '(' mas encontrado: " + tagToString(look.tag));
-                return Type.ERROR;
+                return new ExprResult(Type.ERROR, "");
         }
     }
 

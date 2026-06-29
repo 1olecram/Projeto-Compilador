@@ -3,6 +3,7 @@ package compilador;
 import compilador.lexico.Lexer;
 import compilador.sintatico.Parser;
 import java.io.IOException;
+import java.io.PrintWriter;
 public class Main {
     public static void main(String[] args) {
         if (args.length == 0) {
@@ -27,6 +28,14 @@ public class Main {
                 }
             } else {
                 System.out.println("Análise concluída com sucesso! Código sintática e semanticamente correto.");
+                
+                String code = parse.getGenerator().getCode();
+                String outputFile = args[0].replaceAll("\\.[^.]+$", "") + ".j";
+                
+                try (PrintWriter out = new PrintWriter(outputFile)) {
+                    out.print(code);
+                }
+                System.out.println("Código gerado em: " + outputFile);
             }
             
             // Fecha o Lexer após a análise
